@@ -14,16 +14,46 @@ Widget editorWidget(WavBloc wavBloc) {
       borderRadius: BorderRadius.circular(8.0),
     )
         > $$ >> (context) {
-          final data = $(() => wavBloc.data);
-          return GestureDetector(
-            child: CustomPaint(
-              painter: WavePainter(
-                data: data,
-              ),
-            ),
+          final oldData = useState<List<int>>(null);
+          final newData = useState<List<int>>(null);
+          useDispose(() =>
+              wavBloc.data.subscribe((data) {
+                newData.value ??= data;
+                oldData.value ??= data;
+                oldData.value = newData.value;
+                newData.value = data;
+              }), (Disposable a) => a.cancel);
+
+          return TweenAnimationBuilder<List<int>>(
+            tween: _ListTween(oldData.value, newData.value),
+            duration: ms300,
+            curve: Curves.easeOut,
+            builder: (context, data, _) {
+              return CustomPaint(
+                painter: WavePainter(
+                  data: data,
+                ),
+              );
+            },
           );
         };
   };
+}
+
+class _ListTween extends Tween<List<int>> {
+
+  _ListTween(List<int> begin, List<int> end) : super(begin: begin, end: end);
+
+  @override
+  List<int> lerp(double t) {
+    return begin
+        .asMap()
+        .entries
+        .map((entry) {
+      return DoubleLerp(entry.value.toDouble(), end[entry.key].toDouble()).lerp(
+          t).floor();
+    }).toList();
+  }
 }
 
 class WavePainter extends CustomPainter {

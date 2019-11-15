@@ -1,4 +1,5 @@
 import 'dart:html';
+import 'dart:js' as js;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -12,12 +13,19 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData.dark(),
-      home: mainPage((Uint8List data) {
-        final blob = Blob(
-            <dynamic>[data], "audio/wav");
-        final url = Url.createObjectUrl(blob).toString();
-        window.open(url, "download");
-      }),
+      home: mainPage(
+        exportAudio: (Uint8List data) {
+          final blob = Blob(
+              <dynamic>[data], "audio/wav");
+          final url = Url.createObjectUrl(blob).toString();
+          window.open(url, "download");
+        },
+        previewSamples: (data) {
+          js.context.callMethod("playByteArray", <dynamic>[
+            data
+          ]);
+        },
+      ),
     );
   }
 }

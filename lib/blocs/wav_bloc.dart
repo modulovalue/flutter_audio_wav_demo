@@ -1,4 +1,5 @@
 import 'dart:math' as _math;
+import 'dart:math';
 import 'package:bird/bird.dart';
 import 'package:convert/convert.dart';
 
@@ -7,7 +8,7 @@ import 'package:convert/convert.dart';
 // https://de.wikipedia.org/wiki/RIFF_WAVE
 // ignore_for_file: close_sinks
 class WavBloc extends HookBloc {
-  final Signal<double> _durationInSeconds = HookBloc.disposeSink(Signal(0.05));
+  final Signal<double> _durationInSeconds = HookBloc.disposeSink(Signal(0.3));
   final Signal<int> _channels = HookBloc.disposeSink(Signal(1));
 
   // Samples per second
@@ -19,9 +20,9 @@ class WavBloc extends HookBloc {
   Wave<int> channels;
   Wave<int> sampleRate;
   Wave<int> bytesPerSample;
-  Wave<num> data_size;
-  Wave<num> header_size;
-  Wave<num> file_size;
+  Wave<int> data_size;
+  Wave<int> header_size;
+  Wave<int> file_size;
   Wave<List<int>> data;
 
   WavBloc() {
@@ -31,29 +32,27 @@ class WavBloc extends HookBloc {
     bytesPerSample = _bytesPerSample.wave;
     data = _data.wave;
 
-    data_size = Wave.combineLatest<num, num>(
+    data_size = Wave.combineLatest<num, int>(
         [durationInSeconds, channels, sampleRate, bytesPerSample], (a) {
-      return a.reduce((a, b) => a * b);
+      return a.reduce((a, b) => a * b).floor();
     });
     header_size = just(44);
     file_size = data_size.and(header_size).latest((a, b) => a + b);
     setSilence();
   }
 
-  void setSine() {
-    _data.add(_iterateThroughLengthOfWave((sample, addSample) {
-      final val = ((_sinAtFreq(392.0, sample / _sampleRate.value)) / 2 * _math
-          .pow(2, _bytesPerSample.value * 8))
+  void setSine(Iterable<int> steps) {
+    _data.add(_iterateThroughLengthOfWave((sample, addSample, period) {
+      final val = (
+          _normalize(_sinAtSteps(steps, period)))
           .floor().clamp(0, 255).round();
       addSample(val);
     }));
   }
 
   void setSquare() {
-    _data.add(_iterateThroughLengthOfWave((sample, addSample) {
-      final val = ((_sinAtFreq(392.0, sample / _sampleRate.value)) / 2 * _math
-          .pow(2, _bytesPerSample.value * 8))
-          .floor().clamp(0, 255);
+    _data.add(_iterateThroughLengthOfWave((sample, addSample, period) {
+      final val = _normalize(_sinAtSteps([0], period)).floor();
       if (val > 128) {
         addSample(255);
       } else {
@@ -62,18 +61,37 @@ class WavBloc extends HookBloc {
     }));
   }
 
+  num _normalize(num a) {
+    return a / 2 * _math.pow(
+        2, _bytesPerSample.value * 8);
+  }
+
   void setSilence() {
-    _data.add(_iterateThroughLengthOfWave((sample, addSample) {
+    _data.add(_iterateThroughLengthOfWave((sample, addSample, period) {
       addSample(128);
     }));
   }
 
+  void setNoise() {
+    final rand = Random();
+    _data.add(_iterateThroughLengthOfWave((sample, addSample, period) {
+      addSample(rand.nextInt(256));
+    }));
+  }
+
+  void setSecureNoise() {
+    final rand = Random.secure();
+    _data.add(_iterateThroughLengthOfWave((sample, addSample, period) {
+      addSample(rand.nextInt(256));
+    }));
+  }
+
   List<int> _iterateThroughLengthOfWave(
-      void Function(int sample, void Function(int) addSample) action) {
+      void Function(int sample, void Function(int) addSample, double period) action) {
     final data = <int>[];
     for (var j = 0; j < (_durationInSeconds.value * _sampleRate.value)
         .floor(); j++) {
-      action(j, data.add);
+      action(j, data.add, j / _sampleRate.value);
     }
     return data;
   }
@@ -129,3 +147,35 @@ double _pi = _math.pi;
 double _sin(num d) => _math.sin(d);
 
 double _sinAtFreq(double freq, double time) => _sin(freq * _pi * 2 * time) + 1;
+
+double _sinAtFreqs(Iterable<double> freq, double time) {
+  return (freq.map((_freq) => _sinAtFreq(_freq, time) - 128).reduce((a,
+      b) => a + b) / freq.length) + 128;
+}
+
+double _sinAtSteps(Iterable<int> steps, double time) {
+  return _sinAtFreqs(steps.map(calcFrequency), time);
+}
+
+double calcFrequency(int stepsAboveA4) {
+  const _rootMiddleC5 = 440.0;
+  return _rootMiddleC5 * _math.pow(1.059463, stepsAboveA4);
+}
+
+Iterable<int> minor7(int stepsAboveA4) {
+  return [-12, -24, -36, -5, 0, 3, 7].map((a) => a + stepsAboveA4);
+}
+
+Iterable<int> major7(int stepsAboveA4) {
+  return [-12, -24, -36, -5, 0, 4, 7].map((a) => a + stepsAboveA4);
+}
+//
+//Iterable<int> minor7(int stepsAboveA4) sync* {
+//  yield* minor(stepsAboveA4);
+//  yield 10;
+//}
+//
+//Iterable<int> major7(int stepsAboveA4) sync* {
+//  yield* major(stepsAboveA4);
+//  yield 11;
+//}
